@@ -1,0 +1,3 @@
+Git is probably one of the most fundamental skills you need as a developer. But I don't like to limit my usage of Git to software projects; I use GitHub religiously as a way to store anything I'd like to share. This md file for example. With consideration of the impact Git has on my everyday life, I think I ought to learn how it works internally.
+
+I'm going to pour over a ton of documentation and just synthesize a couple of the main concepts I would need if I wanted to rebuild Git from scratch (thus the name of this file).
