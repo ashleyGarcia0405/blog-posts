@@ -13,7 +13,6 @@ I propose developing a dedicated, automated CORE Fellowship platform to streamli
 | Interview Scoring and Tracking | Scores and preferences are managed manually in spreadsheets, making the final matching process subjective and incredibly time-intensive.                            |
 | Communication and Outreach     | Student and startup communication is ad-hoc via email, leading to lost threads and lack of centralized history.                                                     |
 | Focus Diversion                | Administrative tasks consume an excessive amount of leadership time, preventing the team from focusing on critical startup recruitment and relationship management. |
-
 ### Vision for the New Automated Platform
 
 The new platform will centralize all components of the fellowship life cycle, drastically reducing the administrative burden and freeing up leadership time to focus on strategic growth:
@@ -25,76 +24,77 @@ The new platform will centralize all components of the fellowship life cycle, dr
 3. **Intelligent Matching Algorithm:** Implement a **semi-automated matching feature** that uses student scores, technical profiles, and stated preferences to generate optimal student-startup pairings. This tool would transform weeks of manual work into a single afternoon of review and refinement.
     
 4. **Integrated Communications:** Built-in email or notification features to handle routine outreach, scheduling, and acceptance/rejection notifications.
-### Development and Sprint Planning
-I sent a message in the CORE Announcements channel. I have about 4 people who have agreed to work on this so far (including me).  I will keep track of this project in the CORE Notion with a Kanban board, but this space is more for me to personally keep track of the core features.
+---
+### My Progress
 
-#### Sprint 1: Foundation & Setup
-**Goal:** Establish project infrastructure and core data models
-**Tasks:**
-- Set up development environment and version control
-- Define tech stack (Frontend: React/Next.js, Backend: Node.js/Python, Database: PostgreSQL/MongoDB)
-- Create database schema for users, applications, startups, and interviews
-- Set up authentication system (student/admin roles)
-- Basic landing page and navigation structure
-- Define API endpoints documentation
-**Deliverable:** Working development environment with basic auth and database schemas
+Day 1
+I started off with setting up some scaffolding and making some decisions about where I would host everything. I am working within a monorep
 
-#### Sprint 2: Application Management
-**Goal:** Replace Wufoo forms with integrated application system
-**Tasks:**
-- Build student application form with validation
-- Create startup profile submission form
-- Implement form data storage and retrieval
-- Admin dashboard to view all applications
-- Export functionality to CSV/Excel for backup
-- Application status tracking (submitted, under review, accepted, rejected)
-**Deliverable:** Fully functional application submission and viewing system
+Day 2
+Today I am implementing JWT authentication. The system will support 3 user types with role-based access control: students, startups, and admin. 
+Architecture: Centralized JWT Issuance with Distributed Validation
+- identity-service: Issues JWTs, manages user registration/login
+- api-gateway: Validates JWTs, extracts userId, forwards as X-User-Id header to downstream services
+- applications-service: Trusts gateway-provided userId header for authorization
 
-#### Sprint 3: Interview & Evaluation System
-**Goal:** Automate interview scoring and preference tracking
-**Tasks:**
-- Create interview scheduling interface
-- Build evaluation form for interviewers (technical skills, communication, preferences)
-- Real-time score calculation and aggregation
-- Candidate comparison dashboard
-- Notes and comments system for each candidate
-- Filter and search functionality for candidates
-**Deliverable:** Complete interview management and scoring system
+User Lifecycle
+1. Registration (anonymous -> user account)
+	User visits → Register page → Submits registration form -> redirect to Login
+	Here the identity service:
+	-  validates email uniqueness
+	- hashes password with bcrypt
+	- creates user doc with:
+		- userType (STUDENT vs STARTUP), role, accountEnables = true, emailVerified = false (this will be for future email verification)
+	- returns 201 CREATED
+2. Login (Authentication Session)
+	Identity service:
+	- finds user by email
+	- verifies password with bcrypt
+	- checks accountEnabled && !accountLocked (this will be rare)
+	- generates JWT with claims:
+		- sub: userId (this will be MongoDB ObjectIf), email, userType, role, exp: 24 hours from current time
+	- updates user.LastLoginAt
+	- Returns JWT token
+	Frontend stores JWT in local storage -> User is authenticated 
+3. Application Creation
+	Students
+		A student will go to the application form and fill it out which then triggers a 
+		 -  POST /v1/students/applications (with JWT in Authorization header)
+		The api-gateway validates JWT, extracts userId from JWT subject claim, adds X-User-ID header to the request and forwards it to the application-service.
+		The application-service will extract userId from the X-User_id header and do some checks on whether the user already has an application for this term. The service will attempt to findByUserIdAndTerm(userId, currentTerm). If it exists, the service will return a 409 Conflict "You have already submitted an application for this term"
+		- Service creates StudentApplication with userId from header, email from request body, status = "submitted", term (set by admin or null initially). This is saved to the database and a 201 Created with application document is returned.
+	Startups
+		Same goes for startups. POST /v1/startups/intake (with JWT) + same validation and linking process.
 
-#### Sprint 4: Matching Algorithm 
-**Goal:** Implement semi-automated matching between students and startups
-**Tasks:**
-- Design matching algorithm (weighted scoring: technical fit, preferences, startup needs)
-- Build matching interface with drag-and-drop capability
-- Generate initial automated matching suggestions
-- Manual override and adjustment tools
-- Conflict resolution (multiple students for same position)
-- Matching history and version control
-**Deliverable:** Working matching algorithm with manual refinement capabilities
+ Application Lifecycle
+ 1. SUBMITTED
+	 - the user can view their own application, the admin can see the review queue
+	 - the user CANNOT edit after submission
+	 - the user can only have ONE application per term
+ 2. UNDER_REVIEW (Admin Action)
+	- admin reviews application -> PATCH /v1/students/applications/{id}
+	- the application is then updated with status = "under review", reviewedBy: adminUserId, updatedAt = Instant.now()
+ 3. ACCEPTED/REJECTED
+	 Admin decision → PATCH /v1/students/applications/{id}
+	 Request body: {
+	   status: "accepted" | "rejected",
+	   reviewedBy: "adminUserId",
+	   reviewNotes: "Reason for decision"
+	 }
+	 Application updated with status: "accepted" or "rejected", reviewedBy: adminUserId, reviewNotes: stored, updatedAt: Instant.now()
 
-#### Sprint 5: Communications & Notifications
-**Goal:** Centralize all communications
-**Tasks:**
-- Email integration (SendGrid/AWS SES)
-- Template system for common emails (acceptance, rejection, interview invites)
-- Automated notification triggers (application received, interview scheduled, match made)
-- Communication history log per student/startup
-- Bulk email functionality for announcements
-- Calendar integration for interview scheduling
-**Deliverable:** Integrated communication system with email templates and automation
+Stuff I did:
+- JWT authentication filter in api-gateway
+- JWT validation and user header forwarding (X-User-Id, X-User-Role, X-User-Email)
+- Proxy endpoints for authentication (/v1/auth/register, /v1/auth/login)
+- RBAC config
+- added userId field to StudentApplication and Startup models
+- added userID query methods to repos
+- StudentApplicationController with complete authentication logic
+- Added @PreAuthorize("hasRole('ADMIN')") to ExportController
 
-#### Sprint 6: Testing and Launch
-**Goal:** Ensure platform stability and prepare for production
-**Tasks:**
-- End-to-end testing with real data from previous cycles
-- User acceptance testing with CORE leadership
-- Performance optimization and bug fixes
-- User documentation and training materials
-- Data migration plan from current Google Sheets
-- Production deployment and monitoring setup
-**Deliverable:** Production-ready platform with documentation
-
-#### Post-Launch Priorities
-- Analytics dashboard (application metrics, conversion rates, time saved)
-- Automated reminder system for incomplete applications
-- Feedback collection system from students and startups
+Things I have to do now:
+-   update StartupController (similar to StudentApplicationController)
+-  update SecurityConfig to enable method security
+-  build and test applications-service
+-  end-to-end integration testing
